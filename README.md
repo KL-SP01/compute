@@ -4,6 +4,8 @@ Daily tracker of GPU rental prices: the SemiAnalysis GPU pricing index tested ag
 
 Live dashboard: https://kl-sp01.github.io/compute/
 
+![Dashboard screenshot](docs/screenshot.png)
+
 ## Sources
 
 | Source | What it measures | Update frequency |
