@@ -32,6 +32,7 @@ jobs:
         run: |
           python build_comparison.py
           python rebuild_workbook.py
+          python build_latest.py
           python prepare_public.py
         env:
           ANALYSIS_PUBLIC_ENABLED: ${{ vars.ANALYSIS_PUBLIC_ENABLED }}

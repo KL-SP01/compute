@@ -6,9 +6,9 @@ import os,base64,shutil
 from pathlib import Path
 from openpyxl import load_workbook
 ROOT=Path(__file__).resolve().parent;out=ROOT/'public';out.mkdir(exist_ok=True)
-for f in ['index.html','snapshots.json']:shutil.copy(ROOT/f,out/f)
+for f in ['index.html','snapshots.json','latest.json']:shutil.copy(ROOT/f,out/f)
 if True:  # Only permitted Latitude/GPU Economy data is present in this deployed build.
-    for f in ['comparison.js','comparison_data.json','workbook.b64']:shutil.copy(ROOT/f,out/f)
+    for f in ['comparison.js','comparison_data.json','workbook.b64','history.xlsx']:shutil.copy(ROOT/f,out/f)
 else:
     html=(out/'index.html').read_text().replace('<script src="comparison.js"></script>','').replace('<section id="priceTest" aria-label="GPU index comparison"></section>','')
     (out/'index.html').write_text(html)
