@@ -1,0 +1,143 @@
+name: Daily update
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 21 * * *'
+    - cron: '37 21 * * *'
+    - cron: '17 22 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: latitude-update
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip duplicate scheduled source collection for Sydney day
+        id: daily_guard
+        run: |
+          python - <<'PYCODE'
+          import datetime,json,os
+          from zoneinfo import ZoneInfo
+          today=datetime.datetime.now(ZoneInfo('Australia/Sydney')).date().isoformat()
+          with open('snapshots.json') as f:
+              exists=today in json.load(f)['snapshots']
+          skip=os.environ.get('GITHUB_EVENT_NAME')=='schedule' and exists
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              print('skip='+str(skip).lower(),file=f)
+          print('Sydney date:',today,'already stored:',exists,'skip source collection:',skip)
+          PYCODE
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install playwright==1.55.0 openpyxl==3.1.5
+      - run: python -m playwright install --with-deps chromium
+        if: steps.daily_guard.outputs.skip != 'true'
+      - name: Run safety regression tests
+        if: steps.daily_guard.outputs.skip != 'true'
+        run: |
+          python test_collector.py
+          python test_demand.py
+      - name: Collect and validate Latitude, OpenRouter and Ramp
+        if: steps.daily_guard.outputs.skip != 'true'
+        run: python collect_latitude.py
+      - name: Collect optional GPU Economy benchmark
+        if: steps.daily_guard.outputs.skip != 'true'
+        continue-on-error: true
+        run: python test_benchmark.py && python collect_benchmark.py
+      - name: Optional GPU Economy aggregate history (one conditional request)
+        if: steps.daily_guard.outputs.skip != 'true'
+        continue-on-error: true
+        run: python collect_history.py
+      - name: Optional SemiAnalysis index (one GET, no retries)
+        if: steps.daily_guard.outputs.skip != 'true'
+        continue-on-error: true
+        run: python collect_semianalysis.py
+      - name: Build comparison from stored observations
+        run: python build_comparison.py
+      - name: Rebuild Excel history
+        run: python rebuild_workbook.py
+      - name: Commit validated data only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add snapshots.json workbook.b64 comparison_data.json comparison_history.json gpu_index.csv
+          for f in gpu_feed_cache.json gpu_feed_http.json gpu_history_http.json h100_contracts.csv semi_contract_data.json semi_status.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update data'
+            git pull --rebase origin main
+            git push
+          fi
+      - name: Keep collection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latitude-collection
+          path: collector-output/
+          retention-days: 7
+  deploy:
+    concurrency:
+      group: github-pages-deploy
+      cancel-in-progress: false
+    needs: collect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openpyxl==3.1.5
+      - uses: actions/configure-pages@v5
+      - name: Prepare public files only
+        run: |
+          python build_comparison.py
+          python rebuild_workbook.py
+          python prepare_public.py
+        env:
+          ANALYSIS_PUBLIC_ENABLED: ${{ vars.ANALYSIS_PUBLIC_ENABLED }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - name: Deploy validated snapshot
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  keepalive:
+    needs: collect
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Keep repository active after a quiet period
+        run: |
+          set -euo pipefail
+          age=$(( ($(date +%s) - $(git log -1 --format=%ct)) / 86400 ))
+          echo "Days since latest main commit: $age"
+          if [ "$age" -ge 40 ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit --allow-empty -m 'Update activity'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi

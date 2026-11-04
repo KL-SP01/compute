@@ -1,0 +1,43 @@
+name: Publish dashboard changes
+on:
+  push:
+    branches: [main]
+    paths: [index.html, snapshots.json, workbook.b64, comparison.js, comparison_data.json]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: github-pages-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install openpyxl==3.1.5
+      - uses: actions/configure-pages@v5
+      - name: Prepare public files only
+        run: |
+          python build_comparison.py
+          python rebuild_workbook.py
+          python prepare_public.py
+        env:
+          ANALYSIS_PUBLIC_ENABLED: ${{ vars.ANALYSIS_PUBLIC_ENABLED }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - name: Deploy validated snapshot
+        id: deployment
+        uses: actions/deploy-pages@v4
