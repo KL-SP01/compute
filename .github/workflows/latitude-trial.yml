@@ -62,11 +62,13 @@ jobs:
         run: python build_comparison.py
       - name: Rebuild Excel history
         run: python rebuild_workbook.py
+      - name: Build first-paint payload
+        run: python build_latest.py
       - name: Commit validated data only
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add snapshots.json workbook.b64 comparison_data.json comparison_history.json gpu_index.csv
+          git add snapshots.json workbook.b64 history.xlsx latest.json comparison_data.json comparison_history.json gpu_index.csv
           for f in gpu_feed_cache.json gpu_feed_http.json gpu_history_http.json h100_contracts.csv semi_contract_data.json semi_status.json; do
             if [ -f "$f" ]; then git add "$f"; fi
           done
@@ -108,6 +110,7 @@ jobs:
         run: |
           python build_comparison.py
           python rebuild_workbook.py
+          python build_latest.py
           python prepare_public.py
         env:
           ANALYSIS_PUBLIC_ENABLED: ${{ vars.ANALYSIS_PUBLIC_ENABLED }}
