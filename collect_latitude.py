@@ -135,13 +135,17 @@ def collect():
             result.append({'id':ident,'category':category,'hardware':r[1].replace('\n',' '),'memory':r[2].replace('\n',' '),'hourly':h['hr'],'monthly':h.get('mo'),'reservedMonthlyHourly':m['hr'],'reservedMonthlyMonthly':m['mo'],'reservedYearlyHourly':y['hr'],'reservedYearlyMonthly':None,'reservedYearlyAnnual':y['yr'],'source':'https://www.latitude.sh/pricing','locations':locs,'cheapestLocations':[l['location'] for l in priced if l['hourly']==lo],'mostExpensiveLocations':[l['location'] for l in priced if l['hourly']==hi],'locationHourlyMin':lo,'locationHourlyMax':hi,'availability':f"{sum(l['status']=='CURRENTLY IN STOCK' for l in locs)} of {len(locs)} listed locations in stock" if locs else 'Not verified by location','currentStatus':'listed_in_current_catalog','basis':'Direct displayed billing terms. Annual totals retained. Missing values are null.'})
     return result
 
+# New plan IDs manually validated on the live pricing page before first publishing (dated record of the check).
+MANUAL_NEW_PLANS={'vm.micro':'2026-11-06','vm.mini':'2026-11-06'}
+
 def main():
     data=json.loads((ROOT/'snapshots.json').read_text());previous=max(data['snapshots'].values(),key=lambda s:s['capturedAt'])
     plans=collect();old={p['id']:p for p in previous['latitude']['plans']};new={p['id']:p for p in plans}
-    unknown=set(new)-set(old)
+    unknown=set(new)-set(old)-set(MANUAL_NEW_PLANS)
     require(not unknown,'New plan IDs require manual validation before publishing: '+', '.join(sorted(unknown)))
     now=datetime.now(ZoneInfo('Australia/Sydney'));key=now.date().isoformat();checked=now.isoformat(timespec='seconds')
     for ident,p in new.items():
+        if ident not in old: continue
         validate_against_previous(p,old[ident])
     missing=sorted(set(old)-set(new));last_observed=previous.get('latitude',{}).get('capturedAt') or previous.get('capturedAt')
     plans.extend(missing_plan_record(old[i],last_observed,checked) for i in missing)
