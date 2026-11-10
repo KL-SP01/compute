@@ -63,12 +63,7 @@ def read_ramp(page,anchor,now):
     v={x['vendor']:x for x in raw['adoptionVendor'] if x['date_month']==period};fin=[x for x in raw['spendPerEmployeeCurated'] if x['date_month']==period and x['dimension_type']=='company_financing_status']
     require(sp and 'Anthropic'in v and 'OpenAI'in v and len(fin)>=3,'Ramp periods incomplete')
     # No current published index levels are present in the JSON route. Keep the last observed publisher index exactly as-is and flag just this subfeed stale; monthly page data remains independently refreshable.
-    token_spend=copy.deepcopy(anchor['tokenSpend'])
-    token_spend['stale']=True
-    token_spend['checkedAt']=now
-    token_spend['sourceCapturedAt']=anchor.get('capturedAt')
-    token_spend['staleSince']=anchor.get('sourceCapturedAt') or anchor.get('capturedAt')
-    token_spend['staleReason']=('Ramp current chart lacks verifiable published index levels; raw JSON USD totals cannot replace them.' if not token_error else 'Ramp publisher index markup missing; raw token dataset also unavailable: '+token_error[:170])
+    token_spend=stale_token_index(anchor,now,'Ramp current chart lacks verifiable published index levels; raw JSON USD totals cannot replace them.' if not token_error else 'Ramp publisher index markup missing; raw token dataset also unavailable: '+token_error[:170])
     result={'source':'https://ramp.com/data/ai-index','tokenSource':'https://ramp.com/data/ai-index','tokenDataSource':token_url,'period':period[:7],'periodLabel':datetime.strptime(period,'%Y-%m-%d').strftime('%B %Y'),'adoption':{'overall':a['adoption_rate_pct'],'overallChange':a['mom_change_pp'],'anthropic':v['Anthropic']['adoption_rate_pct'],'anthropicChange':v['Anthropic']['mom_change_pp'],'openai':v['OpenAI']['adoption_rate_pct'],'openaiChange':v['OpenAI']['mom_change_pp']},'spendPerEmployee':sp['median_pepm'],'top1SpendPerEmployee':sp['top_1_percent_median_pepm'],'top10SpendPerEmployee':sp['top_10_percent_median_pepm'],'financingStatus':[{'status':x['dimension_label'],'medianSpendPerEmployee':x['median_pepm']} for x in fin],'tokenSpend':token_spend}
     page.screenshot(path=str(OUT/'ramp.png'),full_page=True)
     return result
@@ -111,6 +106,20 @@ def collect(old_o,old_r,now):
     validate(o,r,old_o,old_r)
     for x in [o,r]:x['capturedAt']=now;x['checkedAt']=now
     return o,r
+
+def stale_token_index(anchor,now,reason):
+    """Reuse the last validated maker index with its original provenance intact.
+    sourceCapturedAt/staleSince stay at the time the index values were last captured
+    fresh from the publisher; checkedAt records this check. Consecutive unavailable
+    runs must never advance the provenance dates."""
+    prev=anchor.get('tokenSpend') or {}
+    x=copy.deepcopy(prev)
+    x['stale']=True
+    x['checkedAt']=now
+    x['sourceCapturedAt']=prev.get('sourceCapturedAt') or anchor.get('capturedAt')
+    x['staleSince']=prev.get('staleSince') or prev.get('sourceCapturedAt') or anchor.get('capturedAt')
+    x['staleReason']=reason[:300]
+    return x
 
 def mark_stale(x,now,reason):
     """Reuse the last validated payload, clearly marked stale. capturedAt stays the data's own date."""
